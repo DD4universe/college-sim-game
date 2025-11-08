@@ -1,5 +1,6 @@
 import * as THREE from 'three'
 import { CollegeBuilder } from './college.ts'
+import { Network } from './network.ts'
 
 console.log('Game script loaded!')
 
@@ -8,6 +9,10 @@ const loadingEl = document.getElementById('loading')
 if (loadingEl) {
   setTimeout(() => loadingEl.remove(), 1000)
 }
+
+// Initialize network
+const network = new Network()
+const otherPlayers = new Map<string, THREE.Mesh>()
 
 // Setup scene
 const scene = new THREE.Scene()
@@ -85,6 +90,61 @@ scene.add(player)
 camera.position.set(player.position.x, player.position.y + 5, player.position.z + 10)
 camera.lookAt(player.position)
 
+// Add player name label
+const createPlayerLabel = (name: string, color: number = 0x00ff00) => {
+  const canvas = document.createElement('canvas')
+  const context = canvas.getContext('2d')!
+  canvas.width = 256
+  canvas.height = 64
+  context.fillStyle = `#${color.toString(16).padStart(6, '0')}`
+  context.fillRect(0, 0, 256, 64)
+  context.fillStyle = 'white'
+  context.font = 'Bold 24px Arial'
+  context.textAlign = 'center'
+  context.fillText(name, 128, 40)
+  
+  const texture = new THREE.CanvasTexture(canvas)
+  const spriteMaterial = new THREE.SpriteMaterial({ map: texture })
+  const sprite = new THREE.Sprite(spriteMaterial)
+  sprite.scale.set(2, 0.5, 1)
+  sprite.position.y = 2
+  return sprite
+}
+
+const myLabel = createPlayerLabel('You')
+player.add(myLabel)
+
+// Network event handlers
+network.onPlayerJoined = (data) => {
+  console.log('Creating mesh for player:', data.id)
+  const otherPlayerGeometry = new THREE.CapsuleGeometry(0.5, 1, 4, 8)
+  const otherPlayerMaterial = new THREE.MeshStandardMaterial({ color: 0xff0000 })
+  const otherPlayer = new THREE.Mesh(otherPlayerGeometry, otherPlayerMaterial)
+  otherPlayer.position.set(data.x || 0, data.y || 1, data.z || 10)
+  otherPlayer.castShadow = true
+  
+  const label = createPlayerLabel(`Player ${data.id.substring(0, 4)}`, 0xff0000)
+  otherPlayer.add(label)
+  
+  scene.add(otherPlayer)
+  otherPlayers.set(data.id, otherPlayer)
+}
+
+network.onPlayerMoved = (data) => {
+  const otherPlayer = otherPlayers.get(data.id)
+  if (otherPlayer) {
+    otherPlayer.position.set(data.x, data.y, data.z)
+  }
+}
+
+network.onPlayerLeft = (id) => {
+  const otherPlayer = otherPlayers.get(id)
+  if (otherPlayer) {
+    scene.remove(otherPlayer)
+    otherPlayers.delete(id)
+  }
+}
+
 // Controls
 const keys = {
   w: false,
@@ -117,6 +177,9 @@ window.addEventListener('keyup', (e) => {
 
 // Game loop
 const speed = 0.2
+let lastPosition = { x: player.position.x, y: player.position.y, z: player.position.z }
+let positionUpdateCounter = 0
+
 function animate() {
   requestAnimationFrame(animate)
 
@@ -125,6 +188,19 @@ function animate() {
   if (keys.s || keys.ArrowDown) player.position.z += speed
   if (keys.a || keys.ArrowLeft) player.position.x -= speed
   if (keys.d || keys.ArrowRight) player.position.x += speed
+
+  // Broadcast position if moved (throttled to every 3 frames)
+  positionUpdateCounter++
+  if (positionUpdateCounter >= 3) {
+    positionUpdateCounter = 0
+    if (
+      Math.abs(player.position.x - lastPosition.x) > 0.01 ||
+      Math.abs(player.position.z - lastPosition.z) > 0.01
+    ) {
+      network.emitPlayerPosition(player.position.x, player.position.y, player.position.z)
+      lastPosition = { x: player.position.x, y: player.position.y, z: player.position.z }
+    }
+  }
 
   // Camera follows player
   camera.position.set(
