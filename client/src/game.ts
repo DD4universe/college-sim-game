@@ -1,6 +1,14 @@
 import * as THREE from 'three'
 import { CollegeBuilder } from './college.ts'
 
+console.log('Game script loaded!')
+
+// Remove loading indicator
+const loadingEl = document.getElementById('loading')
+if (loadingEl) {
+  setTimeout(() => loadingEl.remove(), 1000)
+}
+
 // Setup scene
 const scene = new THREE.Scene()
 scene.background = new THREE.Color(0x87CEEB) // Sky blue
@@ -15,7 +23,12 @@ const renderer = new THREE.WebGLRenderer({ antialias: true })
 renderer.setSize(window.innerWidth, window.innerHeight)
 renderer.shadowMap.enabled = true
 renderer.shadowMap.type = THREE.PCFSoftShadowMap
-document.body.appendChild(renderer.domElement)
+const container = document.getElementById('canvas-container')
+if (container) {
+  container.appendChild(renderer.domElement)
+} else {
+  document.body.appendChild(renderer.domElement)
+}
 
 // Lighting
 const ambientLight = new THREE.AmbientLight(0xffffff, 0.6)
